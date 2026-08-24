@@ -43,6 +43,9 @@ function App() {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pdfPageCount, setPdfPageCount] = useState<number | null>(null)
+  const [pdfPageAsset, setPdfPageAsset] = useState<{ url: string; file: File } | null>(null)
+  const [isPreparingPdfPage, setIsPreparingPdfPage] = useState(false)
 
   useEffect(() => {
     const worker = new Worker(new URL('./workers/processing.worker.ts', import.meta.url), {
@@ -63,6 +66,43 @@ function App() {
       if (resultUrl) URL.revokeObjectURL(resultUrl)
     }
   }, [resultUrl])
+
+  useEffect(() => {
+    return () => {
+      if (pdfPageAsset) URL.revokeObjectURL(pdfPageAsset.url)
+    }
+  }, [pdfPageAsset])
+
+  useEffect(() => {
+    if (!file || sourceType !== 'pdf') return
+
+    let cancelled = false
+    setIsPreparingPdfPage(true)
+    setPdfPageCount(null)
+    setPdfPageAsset(null)
+
+    file.arrayBuffer().then(async (buffer) => {
+      try {
+        const { inspectPdf } = await import('./lib/pdf-to-images')
+        const { pageCount, firstPageBlob } = await inspectPdf(buffer)
+        if (cancelled) return
+        setPdfPageCount(pageCount)
+        if (firstPageBlob) {
+          const baseName = file.name.replace(/\.[^.]+$/, '')
+          const pageFile = new File([firstPageBlob], `${baseName}.png`, { type: 'image/png' })
+          setPdfPageAsset({ url: URL.createObjectURL(pageFile), file: pageFile })
+        }
+      } catch {
+        if (!cancelled) setPdfPageCount(null)
+      } finally {
+        if (!cancelled) setIsPreparingPdfPage(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [file, sourceType])
 
   async function handleFileSelected(selected: File) {
     setError(null)
@@ -158,12 +198,13 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, sourceType, targetFormat, editMode])
 
+  const cropSourceFormat = sourceType === 'pdf' ? 'png' : sourceType
   const resultExtension =
     resultBlob?.type === 'application/zip'
       ? 'zip'
       : editMode === 'remove-bg'
         ? 'png'
-        : EXTENSION_BY_FORMAT[editMode === 'crop' && sourceType ? sourceType : targetFormat]
+        : EXTENSION_BY_FORMAT[editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat]
   const exportFileName = file
     ? `${file.name.replace(/\.[^.]+$/, '')}.${resultExtension}`
     : 'converted'
@@ -172,7 +213,7 @@ function App() {
       ? 'ZIP'
       : editMode === 'remove-bg'
         ? 'PNG'
-        : (editMode === 'crop' && sourceType ? sourceType : targetFormat).toUpperCase()
+        : (editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat).toUpperCase()
 
   function handleReset() {
     setFile(null)
@@ -182,6 +223,9 @@ function App() {
     setResultUrl(null)
     setResultBlob(null)
     setError(null)
+    setPdfPageCount(null)
+    setPdfPageAsset(null)
+    setIsPreparingPdfPage(false)
   }
 
   return (
@@ -233,10 +277,20 @@ function App() {
 
       {file && originalUrl && sourceType && (
         <div className="flex flex-1 flex-col justify-center gap-8 py-4">
-          {sourceType !== 'pdf' && <ModeSelector value={editMode} onChange={handleModeChange} />}
+          {sourceType === 'pdf' && isPreparingPdfPage && (
+            <p className="text-center text-[13px] text-(--color-ink-faint)">Analyse du PDF…</p>
+          )}
+
+          {(sourceType !== 'pdf' || pdfPageCount === 1) && (
+            <ModeSelector value={editMode} onChange={handleModeChange} />
+          )}
 
           {editMode === 'remove-bg' ? (
-            <RemoveBackgroundTool imageUrl={originalUrl} file={file} onApply={handleToolApplied} />
+            <RemoveBackgroundTool
+              imageUrl={pdfPageAsset ? pdfPageAsset.url : originalUrl}
+              file={pdfPageAsset ? pdfPageAsset.file : file}
+              onApply={handleToolApplied}
+            />
           ) : editMode === 'convert' ? (
             <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
               <PreviewPanel
@@ -257,8 +311,8 @@ function App() {
             </div>
           ) : (
             <CropTool
-              imageUrl={originalUrl}
-              mimeType={MIME_BY_DETECTED[sourceType]}
+              imageUrl={pdfPageAsset ? pdfPageAsset.url : originalUrl}
+              mimeType={sourceType === 'pdf' ? 'image/png' : MIME_BY_DETECTED[sourceType]}
               onApply={handleToolApplied}
             />
           )}

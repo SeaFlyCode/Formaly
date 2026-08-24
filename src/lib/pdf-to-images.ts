@@ -39,6 +39,17 @@ async function renderPageToBlob(
   })
 }
 
+export async function inspectPdf(
+  file: ArrayBuffer,
+): Promise<{ pageCount: number; firstPageBlob: Blob | null }> {
+  const pdf = await pdfjsLib.getDocument({ data: file }).promise
+  if (pdf.numPages !== 1) return { pageCount: pdf.numPages, firstPageBlob: null }
+
+  const page = await pdf.getPage(1)
+  const firstPageBlob = await renderPageToBlob(page, 'png')
+  return { pageCount: 1, firstPageBlob }
+}
+
 export async function convertPdfToImages(
   file: ArrayBuffer,
   targetFormat: ImageTargetFormat,
