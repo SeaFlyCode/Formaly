@@ -22,4 +22,4 @@ npm run build    # build de prod
 
 ## Licence
 
-Apache License 2.0 — voir [LICENSE](./LICENSE).
+AGPL-3.0 avec Commons Clause — voir [LICENSE](./LICENSE). Usage et modification libres, republication du code source obligatoire (y compris en usage SaaS), mais toute exploitation commerciale nécessite un accord préalable.
