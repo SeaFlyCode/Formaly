@@ -1,18 +1,43 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Domine:wght@500;600&family=Work+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 @import 'tailwindcss';
 
 @theme {
-  --font-display: 'Instrument Serif', serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-display: 'Domine', serif;
+  --font-sans: 'Work Sans', system-ui, sans-serif;
 
-  --color-ink: #0a0a0b;
-  --color-ink-raised: #17171a;
-  --color-paper: #f4f3ef;
-  --color-signal: #cbff3d;
-  --color-signal-dim: #8ea832;
+  --color-paper: oklch(0.965 0.014 75);
+  --color-card: oklch(0.99 0.006 75);
+  --color-ink: oklch(0.22 0.02 50);
+  --color-ink-soft: oklch(0.45 0.02 50);
+  --color-ink-faint: oklch(0.5 0.02 50);
+  --color-line: oklch(0.88 0.02 60);
+  --color-accent: oklch(0.62 0.15 40);
+  --color-accent-dim: oklch(0.5 0.15 40);
+  --color-accent-soft: oklch(0.93 0.04 40);
+  --color-pill: oklch(0.94 0.01 60);
 }
 
 body {
-  background-color: var(--color-ink);
-  color: var(--color-paper);
+  font-family: var(--font-sans);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  background-image:
+    radial-gradient(circle at 82% 8%, oklch(0.93 0.05 40 / 0.35), transparent 42%),
+    radial-gradient(circle at 6% 96%, oklch(0.9 0.03 60 / 0.4), transparent 38%),
+    repeating-linear-gradient(
+      115deg,
+      oklch(0.9 0.015 60 / 0.5) 0px,
+      oklch(0.9 0.015 60 / 0.5) 1px,
+      transparent 1px,
+      transparent 120px
+    );
+  background-attachment: fixed;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+a:hover {
+  color: var(--color-accent-dim);
 }

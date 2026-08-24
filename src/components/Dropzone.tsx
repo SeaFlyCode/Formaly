@@ -5,6 +5,8 @@ interface DropzoneProps {
   accept: string
 }
 
+const FORMAT_PILLS = ['PNG', 'JPEG', 'WEBP', 'PDF']
+
 export function Dropzone({ onFileSelected, accept }: DropzoneProps) {
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -28,10 +30,8 @@ export function Dropzone({ onFileSelected, accept }: DropzoneProps) {
       }}
       onDragLeave={() => setIsDraggingOver(false)}
       onDrop={handleDrop}
-      className={`group relative flex w-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed px-8 py-20 text-center transition-colors duration-150 ${
-        isDraggingOver
-          ? 'border-(--color-signal) bg-(--color-signal)/5'
-          : 'border-white/15 hover:border-white/30'
+      className={`mx-auto flex w-full max-w-xl cursor-pointer flex-col items-center gap-5 rounded-2xl border-[1.5px] border-dashed px-8 py-12 text-center shadow-[0_24px_48px_-24px_oklch(0.3_0.03_50_/_0.28)] transition-colors duration-150 sm:py-14 ${
+        isDraggingOver ? 'border-(--color-accent) bg-(--color-accent-soft)' : 'border-(--color-accent)/50 bg-(--color-card)'
       }`}
     >
       <input
@@ -44,17 +44,39 @@ export function Dropzone({ onFileSelected, accept }: DropzoneProps) {
           if (file) onFileSelected(file)
         }}
       />
-      <span
-        className={`font-mono text-xs uppercase tracking-[0.3em] transition-colors ${
-          isDraggingOver ? 'text-(--color-signal)' : 'text-white/40'
-        }`}
-      >
-        {isDraggingOver ? 'Lâchez le fichier' : 'Glissez un fichier ici'}
-      </span>
-      <p className="font-display text-3xl italic text-(--color-paper) sm:text-4xl">
-        ou cliquez pour parcourir
-      </p>
-      <span className="font-mono text-xs text-white/30">PNG · JPEG — traité localement</span>
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-(--color-accent-soft)">
+        <svg
+          width="28"
+          height="28"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--color-accent-dim)"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
+          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+        </svg>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[17px] font-medium">
+          {isDraggingOver ? 'Lâchez le fichier' : 'Glissez un fichier ici'}
+        </p>
+        <p className="text-sm text-(--color-ink-faint)">
+          ou <span className="underline underline-offset-4">parcourez vos fichiers</span>
+        </p>
+      </div>
+      <div className="flex flex-wrap justify-center gap-2">
+        {FORMAT_PILLS.map((label) => (
+          <span
+            key={label}
+            className="rounded-full bg-(--color-pill) px-[11px] py-[5px] text-[11px] tracking-wide text-(--color-ink-soft)"
+          >
+            {label}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
