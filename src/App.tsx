@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dropzone } from './components/Dropzone'
 import { ToolSelector, type TargetFormat } from './components/ToolSelector'
+import { ModeSelector, type EditMode } from './components/ModeSelector'
+import { CropTool } from './components/CropTool'
+import { RemoveBackgroundTool } from './components/RemoveBackgroundTool'
 import { PreviewPanel } from './components/PreviewPanel'
 import { ExportButton } from './components/ExportButton'
 import { detectFileType, type DetectedFileType } from './lib/file-type-detector'
@@ -34,6 +37,7 @@ function App() {
   const [file, setFile] = useState<File | null>(null)
   const [sourceType, setSourceType] = useState<DetectedFileType | null>(null)
   const [originalUrl, setOriginalUrl] = useState<string | null>(null)
+  const [editMode, setEditMode] = useState<EditMode>('convert')
   const [targetFormat, setTargetFormat] = useState<TargetFormat>('jpeg')
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [resultBlob, setResultBlob] = useState<Blob | null>(null)
@@ -74,11 +78,24 @@ function App() {
     setFile(selected)
     setSourceType(detected)
     setOriginalUrl(URL.createObjectURL(selected))
+    setEditMode('convert')
     setTargetFormat(detected === 'pdf' ? 'png' : detected === 'png' ? 'jpeg' : 'png')
   }
 
+  function handleModeChange(mode: EditMode) {
+    setEditMode(mode)
+    setResultUrl(null)
+    setResultBlob(null)
+    setError(null)
+  }
+
+  function handleToolApplied(blob: Blob) {
+    setResultBlob(blob)
+    setResultUrl(URL.createObjectURL(blob))
+  }
+
   useEffect(() => {
-    if (!file || !sourceType) return
+    if (!file || !sourceType || editMode !== 'convert') return
 
     setIsProcessing(true)
     setError(null)
@@ -139,19 +156,29 @@ function App() {
 
     return () => worker.removeEventListener('message', handleMessage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file, sourceType, targetFormat])
+  }, [file, sourceType, targetFormat, editMode])
 
   const resultExtension =
-    resultBlob?.type === 'application/zip' ? 'zip' : EXTENSION_BY_FORMAT[targetFormat]
+    resultBlob?.type === 'application/zip'
+      ? 'zip'
+      : editMode === 'remove-bg'
+        ? 'png'
+        : EXTENSION_BY_FORMAT[editMode === 'crop' && sourceType ? sourceType : targetFormat]
   const exportFileName = file
     ? `${file.name.replace(/\.[^.]+$/, '')}.${resultExtension}`
     : 'converted'
-  const resultFormatLabel = resultBlob?.type === 'application/zip' ? 'ZIP' : targetFormat.toUpperCase()
+  const resultFormatLabel =
+    resultBlob?.type === 'application/zip'
+      ? 'ZIP'
+      : editMode === 'remove-bg'
+        ? 'PNG'
+        : (editMode === 'crop' && sourceType ? sourceType : targetFormat).toUpperCase()
 
   function handleReset() {
     setFile(null)
     setSourceType(null)
     setOriginalUrl(null)
+    setEditMode('convert')
     setResultUrl(null)
     setResultBlob(null)
     setError(null)
@@ -206,23 +233,35 @@ function App() {
 
       {file && originalUrl && sourceType && (
         <div className="flex flex-1 flex-col justify-center gap-8 py-4">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
-            <PreviewPanel
-              originalUrl={originalUrl}
-              originalIsImage={sourceType !== 'pdf'}
-              originalLabel="Original"
-              originalFormatLabel={sourceType.toUpperCase()}
-              originalSize={file.size}
-              resultUrl={resultUrl}
-              resultIsImage={resultBlob ? resultBlob.type.startsWith('image/') : false}
-              resultLabel="Résultat"
-              resultFormatLabel={resultFormatLabel}
-              resultSize={resultBlob?.size ?? null}
-              isProcessing={isProcessing}
-            >
-              <ToolSelector value={targetFormat} onChange={setTargetFormat} sourceType={sourceType} />
-            </PreviewPanel>
-          </div>
+          {sourceType !== 'pdf' && <ModeSelector value={editMode} onChange={handleModeChange} />}
+
+          {editMode === 'remove-bg' ? (
+            <RemoveBackgroundTool imageUrl={originalUrl} file={file} onApply={handleToolApplied} />
+          ) : editMode === 'convert' ? (
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
+              <PreviewPanel
+                originalUrl={originalUrl}
+                originalIsImage={sourceType !== 'pdf'}
+                originalLabel="Original"
+                originalFormatLabel={sourceType.toUpperCase()}
+                originalSize={file.size}
+                resultUrl={resultUrl}
+                resultIsImage={resultBlob ? resultBlob.type.startsWith('image/') : false}
+                resultLabel="Résultat"
+                resultFormatLabel={resultFormatLabel}
+                resultSize={resultBlob?.size ?? null}
+                isProcessing={isProcessing}
+              >
+                <ToolSelector value={targetFormat} onChange={setTargetFormat} sourceType={sourceType} />
+              </PreviewPanel>
+            </div>
+          ) : (
+            <CropTool
+              imageUrl={originalUrl}
+              mimeType={MIME_BY_DETECTED[sourceType]}
+              onApply={handleToolApplied}
+            />
+          )}
 
           <ExportButton blob={resultBlob} fileName={exportFileName} isProcessing={isProcessing} />
         </div>
