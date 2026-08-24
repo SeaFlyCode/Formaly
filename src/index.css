@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Instrument Serif', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-ink: #0a0a0b;
+  --color-ink-raised: #17171a;
+  --color-paper: #f4f3ef;
+  --color-signal: #cbff3d;
+  --color-signal-dim: #8ea832;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+}
