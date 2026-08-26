@@ -16,8 +16,10 @@ Site statique (Vite + React 19 + TypeScript + Tailwind v4) qui regroupe des outi
 ## Composants
 
 ### App shell (`src/App.tsx`)
-- **Rôle** : orchestre le flux upload → détection type → sélection mode (convert/crop/remove-bg/resize/split) → traitement → export. Gère aussi le flux séparé "fusion PDF" (accessible sans passer par le dropzone principal).
+- **Rôle** : orchestre le flux upload → détection type → sélection mode (convert/crop/remove-bg/resize/split/ocr) → traitement → export. Gère aussi le flux séparé "fusion PDF" (accessible sans passer par le dropzone principal).
 - **Stack** : React (state local, pas de state manager externe)
+- **Lazy-loading** : `CropTool`, `ResizeTool`, `SplitTool`, `MergeTool`, `RemoveBackgroundTool`, `OcrTool` sont importés via `React.lazy(() => import(...).then(m => ({ default: m.XxxTool })))` (named exports) + `<Suspense>` avec un fallback texte simple. Réduit le bundle principal de 692 Ko à 213 Ko gzip — ces outils tirent des libs lourdes (`react-easy-crop`, `pdf-lib`, `tesseract.js`) qui n'ont pas de raison de charger avant que l'utilisateur choisisse le mode correspondant.
+- **Compatibilité** : `checkBrowserSupport()` (`src/lib/check-browser-support.ts`) vérifie `WebAssembly` au montage, bandeau ambre si absent (PDF.js et remove-bg en dépendent).
 - **Chemin** : `src/App.tsx`
 
 ### Détection de type de fichier (`src/lib/file-type-detector.ts`)
@@ -34,6 +36,7 @@ Site statique (Vite + React 19 + TypeScript + Tailwind v4) qui regroupe des outi
 - **ResizeTool** (`src/components/ResizeTool.tsx` + `src/lib/resize-image.ts`) — redimensionnement/compression, aperçu du poids estimé en debounce (300ms)
 - **SplitTool** (`src/components/SplitTool.tsx` + `src/lib/pdf-split.ts`) — découpage PDF page par page, sélection via miniatures (`renderPdfThumbnails` dans `pdf-to-images.ts`)
 - **MergeTool** (`src/components/MergeTool.tsx` + `src/lib/pdf-merge.ts`) — fusion de plusieurs PDF, réordonnable par drag/boutons, accessible via un lien dédié depuis l'écran d'accueil (pas de fichier unique en entrée donc flux séparé du reste)
+- **OcrTool** (`src/components/OcrTool.tsx` + `src/lib/ocr.ts`) — extraction de texte via `tesseract.js` (langue `fra+eng`, worker + traineddata téléchargés à la demande par la lib), résultat affiché dans un textarea + bouton copier, `onApply` reçoit un `Blob` `text/plain` pour réutiliser l'`ExportButton` existant (export en `.txt`)
 
 ### Conversion PDF (`src/lib/pdf-to-images.ts`)
 - **Rôle** : PDF → images (une ou plusieurs pages, zip via `fflate` si multi-page), inspection (page count + aperçu 1ère page), génération de miniatures. Basé sur `pdfjs-dist`.
@@ -49,11 +52,19 @@ Site statique (Vite + React 19 + TypeScript + Tailwind v4) qui regroupe des outi
 - **PDF multi-page** : détection déclenche `inspectPdf` → si >1 page, choix Convertir/Découper ; `pdf → png` HEIC/PDF passent systématiquement par une conversion PNG intermédiaire avant crop/resize/remove-bg
 - **Fusion PDF** : flux totalement séparé, pas de Dropzone principal, plusieurs fichiers en entrée
 
+## PWA / hors-ligne
+
+- **Plugin** : `vite-plugin-pwa` (`registerType: 'autoUpdate'`, config dans `vite.config.ts`).
+- **Precache** (install) : shell applicatif uniquement — bundle principal, CSS, chunks lazy déjà légers (CropTool, MergeTool, ResizeTool, SplitTool, OcrTool, RemoveBackgroundTool), icônes/manifest/html. ~349 KiB, 27 entrées.
+- **Runtime cache (CacheFirst, à la demande)** : gros chunks lazy-loadés — `ort-wasm*` (23,5 Mo, modèle remove-bg), `pdf.worker*` (1,26 Mo), `pdf-to-images*`, `heic-convert*` (1,35 Mo), `transformers.web*`, `PDFButton*`, `processing.worker*`. Exclus du precache explicitement (`globIgnores`/`maximumFileSizeToCacheInBytes: 300*1024` en garde-fou) pour ne pas alourdir l'installation.
+- **Icônes** : `public/icon.svg` + `icon-maskable.svg` (sources), PNG générés (`pwa-192x192.png`, `pwa-512x512.png`, `pwa-maskable-512x512.png`, `apple-touch-icon.png`, favicons) — monogramme "F" sur dégradé terracotta cohérent avec le thème.
+
 ## Tests
 
 - **Framework** : Vitest + jsdom + Testing Library (`npm test` = run, `npm run test:watch`, `npx vitest run --coverage` pour le rapport v8). Config dans `vitest.config.ts`, setup global dans `src/vitest.setup.ts` (matchers jest-dom + cleanup RTL) — volontairement sous `src/` car `tsc -b` ne type-check que ce dossier, et l'augmentation de types jest-dom doit être visible du même programme.
 - **Fichiers** : `src/**/*.test.{ts,tsx}` colocalisés avec le code testé.
-- **Couverture** (v8, ~90% global au 2026-08-26, 129 tests) : quasi 100% sur `src/lib`, ~85% sur `src/components`, ~92% sur `App.tsx`, ~87% sur `processing.worker.ts`. Plus aucun fichier à 0%.
+- **Couverture** (v8, ~90% global au 2026-08-26, 145 tests) : quasi 100% sur `src/lib`, ~85% sur `src/components`, ~90% sur `App.tsx`, ~87% sur `processing.worker.ts`. Plus aucun fichier à 0%.
+- **Piège `navigator.clipboard` + `userEvent.setup()`** : `@testing-library/user-event` réinitialise/redéfinit `navigator.clipboard` lors de `userEvent.setup()`. Un stub posé en `beforeEach` (avant l'appel à `setup()` dans le corps du test) se fait donc écraser. Toujours définir `Object.defineProperty(navigator, 'clipboard', {...})` APRÈS `userEvent.setup()`. Voir `OcrTool.test.tsx`.
 - **Pattern de mock Canvas/Image** : `vi.stubGlobal('Image', MockImage)` avec un setter `src` qui déclenche `onload` en microtask, + `vi.spyOn(HTMLCanvasElement.prototype, 'getContext'/'toBlob')`. Voir `resize-image.test.ts`/`crop-image.test.ts` comme référence.
 - **Pattern de mock d'import dynamique** : `vi.doMock('module-name', ...)` + `await import('./lib-file')` à l'intérieur du test (pas d'import statique du module testé) pour que le mock soit actif avant le premier appel. Voir `pdf-to-images.test.ts`/`heic-convert.test.ts`/`remove-background.test.ts`.
 - **Piège `vi.stubGlobal('URL', {...})`** : remplacer l'objet global `URL` casse son usage comme constructeur (`new URL(...)`, utilisé par `App.tsx` pour l'URL du Worker). Toujours préférer `vi.spyOn(URL, 'createObjectURL'/'revokeObjectURL')` pour ne mocker que les méthodes statiques.
