@@ -21,6 +21,7 @@ const RemoveBackgroundTool = lazy(() =>
 const ResizeTool = lazy(() => import('./components/ResizeTool').then((m) => ({ default: m.ResizeTool })))
 const SplitTool = lazy(() => import('./components/SplitTool').then((m) => ({ default: m.SplitTool })))
 const MergeTool = lazy(() => import('./components/MergeTool').then((m) => ({ default: m.MergeTool })))
+const OcrTool = lazy(() => import('./components/OcrTool').then((m) => ({ default: m.OcrTool })))
 
 const MIME_BY_DETECTED: Record<DetectedFileType, string> = {
   png: 'image/png',
@@ -262,9 +263,11 @@ function App() {
         ? 'png'
         : editMode === 'split'
           ? 'pdf'
-          : editMode === 'resize' && resultBlob
-            ? (resultBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : resultBlob.type.split('/')[1])
-            : EXTENSION_BY_FORMAT[editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat]
+          : editMode === 'ocr'
+            ? 'txt'
+            : editMode === 'resize' && resultBlob
+              ? (resultBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : resultBlob.type.split('/')[1])
+              : EXTENSION_BY_FORMAT[editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat]
   const exportFileName = file
     ? `${file.name.replace(/\.[^.]+$/, '')}.${resultExtension}`
     : 'converted'
@@ -275,9 +278,11 @@ function App() {
         ? 'PNG'
         : editMode === 'split'
           ? 'PDF'
-          : editMode === 'resize' && resultBlob
-            ? resultBlob.type.split('/')[1].toUpperCase()
-            : (editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat).toUpperCase()
+          : editMode === 'ocr'
+            ? 'TXT'
+            : editMode === 'resize' && resultBlob
+              ? resultBlob.type.split('/')[1].toUpperCase()
+              : (editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat).toUpperCase()
 
   function handleReset() {
     setFile(null)
@@ -427,6 +432,13 @@ function App() {
               <ResizeTool
                 imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
                 sourceFormat={resizeSourceFormat}
+                onApply={handleToolApplied}
+              />
+            </Suspense>
+          ) : editMode === 'ocr' ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <OcrTool
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
                 onApply={handleToolApplied}
               />
             </Suspense>
