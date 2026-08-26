@@ -1,4 +1,4 @@
-export type EditMode = 'convert' | 'crop' | 'remove-bg'
+export type EditMode = 'convert' | 'crop' | 'remove-bg' | 'resize' | 'split'
 
 interface ModeSelectorProps {
   value: EditMode
@@ -9,6 +9,7 @@ const MODES: { mode: EditMode; label: string }[] = [
   { mode: 'convert', label: 'Convertir' },
   { mode: 'crop', label: 'Rogner' },
   { mode: 'remove-bg', label: 'Supprimer le fond' },
+  { mode: 'resize', label: 'Compresser / Redimensionner' },
 ]
 
 export function ModeSelector({ value, onChange }: ModeSelectorProps) {

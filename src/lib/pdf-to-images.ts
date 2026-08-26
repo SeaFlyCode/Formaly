@@ -39,6 +39,34 @@ async function renderPageToBlob(
   })
 }
 
+export async function renderPdfThumbnails(file: ArrayBuffer): Promise<Blob[]> {
+  const pdf = await pdfjsLib.getDocument({ data: file }).promise
+  const thumbnails: Blob[] = []
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber)
+    const viewport = page.getViewport({ scale: 0.35 })
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error("Impossible d'initialiser le contexte de rendu")
+
+    await page.render({ canvas, canvasContext: ctx, viewport }).promise
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Rendu de miniature échoué'))),
+        'image/jpeg',
+        0.75,
+      )
+    })
+    thumbnails.push(blob)
+  }
+
+  return thumbnails
+}
+
 export async function inspectPdf(
   file: ArrayBuffer,
 ): Promise<{ pageCount: number; firstPageBlob: Blob | null }> {

@@ -2,6 +2,7 @@
 /out-tsc
 /dist
 *.tsbuildinfo
+/coverage
 
 /node_modules
 npm-debug.log*

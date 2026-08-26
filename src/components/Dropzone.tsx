@@ -5,7 +5,7 @@ interface DropzoneProps {
   accept: string
 }
 
-const FORMAT_PILLS = ['PNG', 'JPEG', 'WEBP', 'PDF']
+const FORMAT_PILLS = ['PNG', 'JPEG', 'WEBP', 'PDF', 'HEIC']
 
 export function Dropzone({ onFileSelected, accept }: DropzoneProps) {
   const [isDraggingOver, setIsDraggingOver] = useState(false)

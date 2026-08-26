@@ -4,6 +4,10 @@ import { ToolSelector, type TargetFormat } from './components/ToolSelector'
 import { ModeSelector, type EditMode } from './components/ModeSelector'
 import { CropTool } from './components/CropTool'
 import { RemoveBackgroundTool } from './components/RemoveBackgroundTool'
+import { ResizeTool } from './components/ResizeTool'
+import { SplitTool } from './components/SplitTool'
+import { MergeTool } from './components/MergeTool'
+import type { ResizeOutputFormat } from './lib/resize-image'
 import { PreviewPanel } from './components/PreviewPanel'
 import { ExportButton } from './components/ExportButton'
 import { detectFileType, type DetectedFileType } from './lib/file-type-detector'
@@ -19,6 +23,7 @@ const MIME_BY_DETECTED: Record<DetectedFileType, string> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   pdf: 'application/pdf',
+  heic: 'image/heic',
 }
 
 const EXTENSION_BY_FORMAT: Record<TargetFormat, string> = {
@@ -46,6 +51,9 @@ function App() {
   const [pdfPageCount, setPdfPageCount] = useState<number | null>(null)
   const [pdfPageAsset, setPdfPageAsset] = useState<{ url: string; file: File } | null>(null)
   const [isPreparingPdfPage, setIsPreparingPdfPage] = useState(false)
+  const [heicAsset, setHeicAsset] = useState<{ url: string; file: File } | null>(null)
+  const [isPreparingHeic, setIsPreparingHeic] = useState(false)
+  const [showMerge, setShowMerge] = useState(false)
 
   useEffect(() => {
     const worker = new Worker(new URL('./workers/processing.worker.ts', import.meta.url), {
@@ -72,6 +80,41 @@ function App() {
       if (pdfPageAsset) URL.revokeObjectURL(pdfPageAsset.url)
     }
   }, [pdfPageAsset])
+
+  useEffect(() => {
+    return () => {
+      if (heicAsset) URL.revokeObjectURL(heicAsset.url)
+    }
+  }, [heicAsset])
+
+  useEffect(() => {
+    if (!file || sourceType !== 'heic') return
+
+    let cancelled = false
+    setIsPreparingHeic(true)
+    setHeicAsset(null)
+
+    convertHeicFile(file)
+
+    async function convertHeicFile(source: File) {
+      try {
+        const { convertHeicToPng } = await import('./lib/heic-convert')
+        const pngBlob = await convertHeicToPng(source)
+        if (cancelled) return
+        const baseName = source.name.replace(/\.[^.]+$/, '')
+        const pngFile = new File([pngBlob], `${baseName}.png`, { type: 'image/png' })
+        setHeicAsset({ url: URL.createObjectURL(pngFile), file: pngFile })
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Conversion HEIC échouée')
+      } finally {
+        if (!cancelled) setIsPreparingHeic(false)
+      }
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [file, sourceType])
 
   useEffect(() => {
     if (!file || sourceType !== 'pdf') return
@@ -111,7 +154,7 @@ function App() {
 
     const detected = await detectFileType(selected)
     if (!detected) {
-      setError('Format non reconnu — seuls PNG, JPEG, WebP et PDF sont supportés pour le moment.')
+      setError('Format non reconnu — seuls PNG, JPEG, WebP, PDF et HEIC sont supportés pour le moment.')
       return
     }
 
@@ -119,7 +162,9 @@ function App() {
     setSourceType(detected)
     setOriginalUrl(URL.createObjectURL(selected))
     setEditMode('convert')
-    setTargetFormat(detected === 'pdf' ? 'png' : detected === 'png' ? 'jpeg' : 'png')
+    setTargetFormat(
+      detected === 'pdf' ? 'png' : detected === 'heic' ? 'jpeg' : detected === 'png' ? 'jpeg' : 'png',
+    )
   }
 
   function handleModeChange(mode: EditMode) {
@@ -166,6 +211,8 @@ function App() {
       }
     }
 
+    if (sourceType === 'heic' && !heicAsset) return
+
     const worker = workerRef.current
     if (!worker) return
 
@@ -181,14 +228,17 @@ function App() {
 
     worker.addEventListener('message', handleMessage)
 
-    file.arrayBuffer().then((buffer) => {
+    const sourceFile = sourceType === 'heic' && heicAsset ? heicAsset.file : file
+    const sourceMimeType = sourceType === 'heic' ? 'image/png' : MIME_BY_DETECTED[sourceType]
+
+    sourceFile.arrayBuffer().then((buffer) => {
       const request: ProcessingRequest =
         targetFormat === 'pdf'
-          ? { type: 'image-to-pdf', file: buffer, sourceMimeType: MIME_BY_DETECTED[sourceType] }
+          ? { type: 'image-to-pdf', file: buffer, sourceMimeType }
           : {
               type: 'convert-image',
               file: buffer,
-              sourceMimeType: MIME_BY_DETECTED[sourceType],
+              sourceMimeType,
               targetFormat,
             }
       worker.postMessage(request, [buffer])
@@ -196,15 +246,20 @@ function App() {
 
     return () => worker.removeEventListener('message', handleMessage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file, sourceType, targetFormat, editMode])
+  }, [file, sourceType, targetFormat, editMode, heicAsset])
 
-  const cropSourceFormat = sourceType === 'pdf' ? 'png' : sourceType
+  const cropSourceFormat = sourceType === 'pdf' || sourceType === 'heic' ? 'png' : sourceType
+  const resizeSourceFormat: ResizeOutputFormat = cropSourceFormat === 'jpeg' || cropSourceFormat === 'webp' ? cropSourceFormat : 'png'
   const resultExtension =
     resultBlob?.type === 'application/zip'
       ? 'zip'
       : editMode === 'remove-bg'
         ? 'png'
-        : EXTENSION_BY_FORMAT[editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat]
+        : editMode === 'split'
+          ? 'pdf'
+          : editMode === 'resize' && resultBlob
+            ? (resultBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : resultBlob.type.split('/')[1])
+            : EXTENSION_BY_FORMAT[editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat]
   const exportFileName = file
     ? `${file.name.replace(/\.[^.]+$/, '')}.${resultExtension}`
     : 'converted'
@@ -213,7 +268,11 @@ function App() {
       ? 'ZIP'
       : editMode === 'remove-bg'
         ? 'PNG'
-        : (editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat).toUpperCase()
+        : editMode === 'split'
+          ? 'PDF'
+          : editMode === 'resize' && resultBlob
+            ? resultBlob.type.split('/')[1].toUpperCase()
+            : (editMode === 'crop' && cropSourceFormat ? cropSourceFormat : targetFormat).toUpperCase()
 
   function handleReset() {
     setFile(null)
@@ -226,6 +285,8 @@ function App() {
     setPdfPageCount(null)
     setPdfPageAsset(null)
     setIsPreparingPdfPage(false)
+    setHeicAsset(null)
+    setIsPreparingHeic(false)
   }
 
   return (
@@ -240,6 +301,14 @@ function App() {
           >
             Changer de fichier
           </button>
+        ) : showMerge ? (
+          <button
+            type="button"
+            onClick={() => setShowMerge(false)}
+            className="text-xs text-(--color-ink-faint) underline underline-offset-4 hover:text-(--color-ink)"
+          >
+            Retour
+          </button>
         ) : (
           <div className="flex items-center gap-2.5 text-xs tracking-[0.08em] text-(--color-ink-soft) uppercase">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-(--color-accent)" />
@@ -248,22 +317,32 @@ function App() {
         )}
       </header>
 
-      {!file && (
+      {!file && showMerge && <MergeTool />}
+
+      {!file && !showMerge && (
         <div className="flex flex-1 flex-col items-center justify-center gap-11 py-6">
           <div className="flex flex-col items-center gap-4 text-center">
             <h1 className="font-display max-w-2xl text-4xl leading-[1.1] font-medium tracking-tight sm:text-5xl">
               Convertissez vos fichiers sans qu'ils quittent votre appareil.
             </h1>
             <p className="max-w-md text-[17px] text-(--color-ink-soft)">
-              PNG, JPEG, WebP, PDF — gratuit, sans compte, sans limite. Tout se passe dans votre
-              navigateur.
+              PNG, JPEG, WebP, PDF, HEIC — gratuit, sans compte, sans limite. Tout se passe dans
+              votre navigateur.
             </p>
           </div>
 
           <Dropzone
-            accept="image/png,image/jpeg,image/webp,application/pdf"
+            accept="image/png,image/jpeg,image/webp,application/pdf,image/heic,image/heif"
             onFileSelected={handleFileSelected}
           />
+
+          <button
+            type="button"
+            onClick={() => setShowMerge(true)}
+            className="text-[13px] text-(--color-ink-soft) underline underline-offset-4 hover:text-(--color-ink)"
+          >
+            Ou fusionnez plusieurs PDF en un seul document →
+          </button>
 
           <p className="text-xs text-(--color-ink-faint)">Aucun fichier n'est jamais envoyé à un serveur.</p>
         </div>
@@ -281,21 +360,60 @@ function App() {
             <p className="text-center text-[13px] text-(--color-ink-faint)">Analyse du PDF…</p>
           )}
 
-          {(sourceType !== 'pdf' || pdfPageCount === 1) && (
+          {sourceType === 'heic' && isPreparingHeic && (
+            <p className="text-center text-[13px] text-(--color-ink-faint)">Conversion HEIC…</p>
+          )}
+
+          {(sourceType !== 'pdf' || pdfPageCount === 1) && (sourceType !== 'heic' || heicAsset) && (
             <ModeSelector value={editMode} onChange={handleModeChange} />
           )}
 
-          {editMode === 'remove-bg' ? (
+          {sourceType === 'pdf' && pdfPageCount !== null && pdfPageCount > 1 && (
+            <div className="flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleModeChange('convert')}
+                className={`rounded-full px-4 py-2 text-[13px] transition-colors ${
+                  editMode === 'convert'
+                    ? 'bg-(--color-accent) font-medium text-(--color-card)'
+                    : 'border border-(--color-line) text-(--color-ink-soft) hover:border-(--color-accent)/50'
+                }`}
+              >
+                Convertir en images
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('split')}
+                className={`rounded-full px-4 py-2 text-[13px] transition-colors ${
+                  editMode === 'split'
+                    ? 'bg-(--color-accent) font-medium text-(--color-card)'
+                    : 'border border-(--color-line) text-(--color-ink-soft) hover:border-(--color-accent)/50'
+                }`}
+              >
+                Découper
+              </button>
+            </div>
+          )}
+
+          {editMode === 'split' && sourceType === 'pdf' && pdfPageCount !== null ? (
+            <SplitTool file={file} pageCount={pdfPageCount} onApply={handleToolApplied} />
+          ) : editMode === 'remove-bg' ? (
             <RemoveBackgroundTool
-              imageUrl={pdfPageAsset ? pdfPageAsset.url : originalUrl}
-              file={pdfPageAsset ? pdfPageAsset.file : file}
+              imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+              file={pdfPageAsset ? pdfPageAsset.file : heicAsset ? heicAsset.file : file}
+              onApply={handleToolApplied}
+            />
+          ) : editMode === 'resize' ? (
+            <ResizeTool
+              imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+              sourceFormat={resizeSourceFormat}
               onApply={handleToolApplied}
             />
           ) : editMode === 'convert' ? (
             <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
               <PreviewPanel
-                originalUrl={originalUrl}
-                originalIsImage={sourceType !== 'pdf'}
+                originalUrl={heicAsset ? heicAsset.url : originalUrl}
+                originalIsImage={sourceType !== 'pdf' && (sourceType !== 'heic' || !!heicAsset)}
                 originalLabel="Original"
                 originalFormatLabel={sourceType.toUpperCase()}
                 originalSize={file.size}
@@ -311,8 +429,10 @@ function App() {
             </div>
           ) : (
             <CropTool
-              imageUrl={pdfPageAsset ? pdfPageAsset.url : originalUrl}
-              mimeType={sourceType === 'pdf' ? 'image/png' : MIME_BY_DETECTED[sourceType]}
+              imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+              mimeType={
+                sourceType === 'pdf' || sourceType === 'heic' ? 'image/png' : MIME_BY_DETECTED[sourceType]
+              }
               onApply={handleToolApplied}
             />
           )}
