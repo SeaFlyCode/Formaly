@@ -20,7 +20,7 @@ Suivi des tâches par ordre de valeur.
 - Redimensionnement / compression d'image (ResizeTool)
 - Fusion de PDF (MergeTool)
 - Découpage de PDF (SplitTool, sélection par miniatures)
-- Tests unitaires (Vitest + jsdom + Testing Library) : ~55% de couverture globale (~99% sur `src/lib`, ~73% sur `src/components`)
+- Tests unitaires (Vitest + jsdom + Testing Library) : ~90% de couverture globale, 129 tests, plus aucun fichier à 0%
 
 ## Priorité 1 — Stabilité
 
