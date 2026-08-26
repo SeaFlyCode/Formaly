@@ -126,7 +126,7 @@ describe('App', () => {
     render(<App />)
 
     await user.click(screen.getByText(/fusionnez plusieurs PDF/i))
-    expect(screen.getByText('stub-merge-tool')).toBeInTheDocument()
+    expect(await screen.findByText('stub-merge-tool')).toBeInTheDocument()
 
     await user.click(screen.getByText('Retour'))
     expect(screen.queryByText('stub-merge-tool')).not.toBeInTheDocument()
@@ -163,7 +163,7 @@ describe('App', () => {
     await waitFor(() => expect(MockWorker.latest()?.postMessage).toHaveBeenCalled())
 
     await user.click(screen.getByText('Rogner'))
-    await user.click(screen.getByText('stub-crop-apply'))
+    await user.click(await screen.findByText('stub-crop-apply'))
 
     await waitFor(() => expect(screen.getByText('photo.png')).toBeInTheDocument())
   })
@@ -175,7 +175,7 @@ describe('App', () => {
     await waitFor(() => expect(MockWorker.latest()?.postMessage).toHaveBeenCalled())
 
     await user.click(screen.getByText('Compresser / Redimensionner'))
-    await user.click(screen.getByText('stub-resize-apply'))
+    await user.click(await screen.findByText('stub-resize-apply'))
 
     await waitFor(() => expect(screen.getByText('photo.webp')).toBeInTheDocument())
   })
@@ -190,7 +190,7 @@ describe('App', () => {
 
     expect(await screen.findByText('Découper')).toBeInTheDocument()
     await user.click(screen.getByText('Découper'))
-    await user.click(screen.getByText('stub-split-apply'))
+    await user.click(await screen.findByText('stub-split-apply'))
 
     await waitFor(() => expect(screen.getByText('doc.pdf')).toBeInTheDocument())
   })

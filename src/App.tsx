@@ -1,22 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Dropzone } from './components/Dropzone'
 import { ToolSelector, type TargetFormat } from './components/ToolSelector'
 import { ModeSelector, type EditMode } from './components/ModeSelector'
-import { CropTool } from './components/CropTool'
-import { RemoveBackgroundTool } from './components/RemoveBackgroundTool'
-import { ResizeTool } from './components/ResizeTool'
-import { SplitTool } from './components/SplitTool'
-import { MergeTool } from './components/MergeTool'
 import type { ResizeOutputFormat } from './lib/resize-image'
 import { PreviewPanel } from './components/PreviewPanel'
 import { ExportButton } from './components/ExportButton'
 import { detectFileType, type DetectedFileType } from './lib/file-type-detector'
+import { checkBrowserSupport } from './lib/check-browser-support'
 import type {
   ImageTargetFormat,
   ProcessingError,
   ProcessingRequest,
   ProcessingSuccess,
 } from './workers/processing.worker'
+
+const CropTool = lazy(() => import('./components/CropTool').then((m) => ({ default: m.CropTool })))
+const RemoveBackgroundTool = lazy(() =>
+  import('./components/RemoveBackgroundTool').then((m) => ({ default: m.RemoveBackgroundTool })),
+)
+const ResizeTool = lazy(() => import('./components/ResizeTool').then((m) => ({ default: m.ResizeTool })))
+const SplitTool = lazy(() => import('./components/SplitTool').then((m) => ({ default: m.SplitTool })))
+const MergeTool = lazy(() => import('./components/MergeTool').then((m) => ({ default: m.MergeTool })))
 
 const MIME_BY_DETECTED: Record<DetectedFileType, string> = {
   png: 'image/png',
@@ -54,6 +58,7 @@ function App() {
   const [heicAsset, setHeicAsset] = useState<{ url: string; file: File } | null>(null)
   const [isPreparingHeic, setIsPreparingHeic] = useState(false)
   const [showMerge, setShowMerge] = useState(false)
+  const [browserSupport] = useState(() => checkBrowserSupport())
 
   useEffect(() => {
     const worker = new Worker(new URL('./workers/processing.worker.ts', import.meta.url), {
@@ -317,7 +322,17 @@ function App() {
         )}
       </header>
 
-      {!file && showMerge && <MergeTool />}
+      {!browserSupport.supported && (
+        <p className="rounded-xl border border-amber-700/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800/80">
+          {browserSupport.message}
+        </p>
+      )}
+
+      {!file && showMerge && (
+        <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+          <MergeTool />
+        </Suspense>
+      )}
 
       {!file && !showMerge && (
         <div className="flex flex-1 flex-col items-center justify-center gap-11 py-6">
@@ -396,19 +411,25 @@ function App() {
           )}
 
           {editMode === 'split' && sourceType === 'pdf' && pdfPageCount !== null ? (
-            <SplitTool file={file} pageCount={pdfPageCount} onApply={handleToolApplied} />
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <SplitTool file={file} pageCount={pdfPageCount} onApply={handleToolApplied} />
+            </Suspense>
           ) : editMode === 'remove-bg' ? (
-            <RemoveBackgroundTool
-              imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
-              file={pdfPageAsset ? pdfPageAsset.file : heicAsset ? heicAsset.file : file}
-              onApply={handleToolApplied}
-            />
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <RemoveBackgroundTool
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+                file={pdfPageAsset ? pdfPageAsset.file : heicAsset ? heicAsset.file : file}
+                onApply={handleToolApplied}
+              />
+            </Suspense>
           ) : editMode === 'resize' ? (
-            <ResizeTool
-              imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
-              sourceFormat={resizeSourceFormat}
-              onApply={handleToolApplied}
-            />
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <ResizeTool
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+                sourceFormat={resizeSourceFormat}
+                onApply={handleToolApplied}
+              />
+            </Suspense>
           ) : editMode === 'convert' ? (
             <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
               <PreviewPanel
@@ -428,13 +449,15 @@ function App() {
               </PreviewPanel>
             </div>
           ) : (
-            <CropTool
-              imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
-              mimeType={
-                sourceType === 'pdf' || sourceType === 'heic' ? 'image/png' : MIME_BY_DETECTED[sourceType]
-              }
-              onApply={handleToolApplied}
-            />
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <CropTool
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+                mimeType={
+                  sourceType === 'pdf' || sourceType === 'heic' ? 'image/png' : MIME_BY_DETECTED[sourceType]
+                }
+                onApply={handleToolApplied}
+              />
+            </Suspense>
           )}
 
           <ExportButton blob={resultBlob} fileName={exportFileName} isProcessing={isProcessing} />
