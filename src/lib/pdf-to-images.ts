@@ -90,6 +90,16 @@ export async function inspectPdf(
   return { pageCount: 1, firstPageBlob }
 }
 
+export async function renderFirstPageJpeg(
+  file: ArrayBuffer,
+  quality: number,
+  scale = 1.5,
+): Promise<Blob> {
+  const pdf = await pdfjsLib.getDocument({ data: file }).promise
+  const page = await pdf.getPage(1)
+  return renderPageToBlob(page, 'jpeg', quality, scale)
+}
+
 export async function compressPdf(file: ArrayBuffer, quality: number, scale = 1.5): Promise<Blob> {
   const pdf = await pdfjsLib.getDocument({ data: file }).promise
   const outDoc = await PDFDocument.create()

@@ -27,6 +27,7 @@ export function ResizeTool({ imageUrl, sourceFormat, onApply }: ResizeToolProps)
   const [format, setFormat] = useState<ResizeOutputFormat>(sourceFormat)
   const [quality, setQuality] = useState(85)
   const [estimatedSize, setEstimatedSize] = useState<number | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -42,13 +43,29 @@ export function ResizeTool({ imageUrl, sourceFormat, onApply }: ResizeToolProps)
 
   useEffect(() => {
     if (!width || !height) return
+    let cancelled = false
     const timeout = setTimeout(() => {
       resizeImageToBlob(imageUrl, { width, height, format, quality })
-        .then((blob) => setEstimatedSize(blob.size))
-        .catch(() => setEstimatedSize(null))
+        .then((blob) => {
+          if (cancelled) return
+          setEstimatedSize(blob.size)
+          setPreviewUrl(URL.createObjectURL(blob))
+        })
+        .catch(() => {
+          if (!cancelled) setEstimatedSize(null)
+        })
     }, 300)
-    return () => clearTimeout(timeout)
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
   }, [imageUrl, width, height, format, quality])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   const ratio = naturalSize ? naturalSize.width / naturalSize.height : 1
 
@@ -79,7 +96,7 @@ export function ResizeTool({ imageUrl, sourceFormat, onApply }: ResizeToolProps)
   return (
     <div className="flex flex-1 flex-col gap-5 rounded-2xl border border-(--color-line) bg-(--color-card) p-6">
       <div className="relative h-[380px] w-full overflow-hidden rounded-xl bg-(--color-paper) sm:h-[440px]">
-        <img src={imageUrl} alt="Aperçu" className="h-full w-full object-contain" />
+        <img src={previewUrl ?? imageUrl} alt="Aperçu" className="h-full w-full object-contain" />
       </div>
 
       <div className="flex flex-col gap-5">

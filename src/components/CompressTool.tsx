@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface CompressToolProps {
   file: File
@@ -13,9 +13,35 @@ function formatBytes(bytes: number): string {
 
 export function CompressTool({ file, onApply }: CompressToolProps) {
   const [quality, setQuality] = useState(60)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   const [resultSize, setResultSize] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const timeout = setTimeout(() => {
+      file.arrayBuffer().then(async (buffer) => {
+        try {
+          const { renderFirstPageJpeg } = await import('../lib/pdf-to-images')
+          const blob = await renderFirstPageJpeg(buffer, quality / 100)
+          if (!cancelled) setPreviewUrl(URL.createObjectURL(blob))
+        } catch {
+          /* aperçu best-effort — l'erreur réelle est signalée à l'application */
+        }
+      })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [file, quality])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   async function handleApply() {
     setIsApplying(true)
@@ -36,6 +62,20 @@ export function CompressTool({ file, onApply }: CompressToolProps) {
 
   return (
     <div className="flex flex-1 flex-col gap-5 rounded-2xl border border-(--color-line) bg-(--color-card) p-6">
+      <div className="relative h-[380px] w-full overflow-hidden rounded-xl bg-(--color-paper) sm:h-[440px]">
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt="Aperçu (1ère page)"
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <p className="flex h-full items-center justify-center text-[13px] text-(--color-ink-faint)">
+            Génération de l'aperçu…
+          </p>
+        )}
+      </div>
+
       <p className="text-[13px] text-(--color-ink-soft)">
         Réduit le poids du PDF en rasterisant chaque page en JPEG compressé — la taille d'origine
         était de <span className="font-mono text-(--color-ink)">{formatBytes(file.size)}</span>.

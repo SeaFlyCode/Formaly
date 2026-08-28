@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { watermarkPdf } from '../lib/watermark'
+import { useEffect, useState } from 'react'
+import { watermarkImage, watermarkPdf } from '../lib/watermark'
 
 interface PdfWatermarkToolProps {
   file: File
@@ -7,10 +7,58 @@ interface PdfWatermarkToolProps {
 }
 
 export function PdfWatermarkTool({ file, onApply }: PdfWatermarkToolProps) {
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
   const [text, setText] = useState('CONFIDENTIEL')
   const [opacity, setOpacity] = useState(30)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let url: string | null = null
+
+    file.arrayBuffer().then(async (buffer) => {
+      try {
+        const { renderPdfThumbnails } = await import('../lib/pdf-to-images')
+        const [thumbnail] = await renderPdfThumbnails(buffer)
+        if (cancelled || !thumbnail) return
+        url = URL.createObjectURL(thumbnail)
+        setThumbnailUrl(url)
+      } catch {
+        if (!cancelled) setError("Impossible de générer l'aperçu.")
+      }
+    })
+
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [file])
+
+  useEffect(() => {
+    if (!thumbnailUrl || !text.trim()) return
+    let cancelled = false
+    const timeout = setTimeout(() => {
+      watermarkImage(thumbnailUrl, { text: text.trim(), opacity: opacity / 100 })
+        .then((blob) => {
+          if (!cancelled) setPreviewUrl(URL.createObjectURL(blob))
+        })
+        .catch(() => {
+          /* aperçu best-effort — l'erreur réelle est signalée à l'application */
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [thumbnailUrl, text, opacity])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   async function handleApply() {
     if (!text.trim()) return
@@ -29,6 +77,20 @@ export function PdfWatermarkTool({ file, onApply }: PdfWatermarkToolProps) {
 
   return (
     <div className="flex flex-1 flex-col gap-5 rounded-2xl border border-(--color-line) bg-(--color-card) p-6">
+      <div className="relative h-[380px] w-full overflow-hidden rounded-xl bg-(--color-paper) sm:h-[440px]">
+        {thumbnailUrl ? (
+          <img
+            src={previewUrl ?? thumbnailUrl}
+            alt="Aperçu (1ère page)"
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <p className="flex h-full items-center justify-center text-[13px] text-(--color-ink-faint)">
+            Génération de l'aperçu…
+          </p>
+        )}
+      </div>
+
       <p className="text-[13px] text-(--color-ink-soft)">
         Applique le filigrane en diagonale sur toutes les pages du document.
       </p>

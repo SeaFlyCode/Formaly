@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { watermarkImage } from '../lib/watermark'
 
 interface WatermarkToolProps {
@@ -9,8 +9,33 @@ interface WatermarkToolProps {
 export function WatermarkTool({ imageUrl, onApply }: WatermarkToolProps) {
   const [text, setText] = useState('CONFIDENTIEL')
   const [opacity, setOpacity] = useState(30)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!text.trim()) return
+    let cancelled = false
+    const timeout = setTimeout(() => {
+      watermarkImage(imageUrl, { text: text.trim(), opacity: opacity / 100 })
+        .then((blob) => {
+          if (!cancelled) setPreviewUrl(URL.createObjectURL(blob))
+        })
+        .catch(() => {
+          /* aperçu best-effort — l'erreur réelle est signalée à l'application */
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [imageUrl, text, opacity])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   async function handleApply() {
     if (!text.trim()) return
@@ -29,7 +54,7 @@ export function WatermarkTool({ imageUrl, onApply }: WatermarkToolProps) {
   return (
     <div className="flex flex-1 flex-col gap-5 rounded-2xl border border-(--color-line) bg-(--color-card) p-6">
       <div className="relative h-[380px] w-full overflow-hidden rounded-xl bg-(--color-paper) sm:h-[440px]">
-        <img src={imageUrl} alt="Aperçu" className="h-full w-full object-contain" />
+        <img src={previewUrl ?? imageUrl} alt="Aperçu" className="h-full w-full object-contain" />
       </div>
 
       <label className="flex flex-col gap-1.5 text-[13px] text-(--color-ink-soft)">

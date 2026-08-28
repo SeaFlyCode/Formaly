@@ -74,6 +74,16 @@ describe('ResizeTool', () => {
     await waitFor(() => expect(screen.getByText(/Poids estimé/)).toBeInTheDocument(), { timeout: 1000 })
   })
 
+  it('swaps the preview image to the debounced resized blob', async () => {
+    render(<ResizeTool imageUrl="data:image/png;base64,x" sourceFormat="png" onApply={vi.fn()} />)
+    await waitFor(() => expect(screen.getByLabelText('Largeur (px)')).toHaveValue(400))
+
+    const preview = screen.getByAltText('Aperçu') as HTMLImageElement
+    expect(preview.src).toContain('data:image/png;base64,x')
+
+    await waitFor(() => expect(preview.src).toMatch(/^blob:/), { timeout: 1000 })
+  })
+
   it('calls onApply with the resized blob', async () => {
     const onApply = vi.fn()
     const user = userEvent.setup()
