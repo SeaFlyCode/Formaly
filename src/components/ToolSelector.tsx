@@ -1,6 +1,6 @@
 import type { DetectedFileType } from '../lib/file-type-detector'
 
-export type TargetFormat = 'png' | 'jpeg' | 'webp' | 'pdf'
+export type TargetFormat = 'png' | 'jpeg' | 'webp' | 'pdf' | 'avif' | 'bmp' | 'ico' | 'tiff'
 
 interface ToolSelectorProps {
   value: TargetFormat
@@ -12,6 +12,10 @@ const IMAGE_OPTIONS: { format: TargetFormat; label: string }[] = [
   { format: 'png', label: 'PNG' },
   { format: 'jpeg', label: 'JPEG' },
   { format: 'webp', label: 'WebP' },
+  { format: 'avif', label: 'AVIF' },
+  { format: 'bmp', label: 'BMP' },
+  { format: 'ico', label: 'ICO' },
+  { format: 'tiff', label: 'TIFF' },
   { format: 'pdf', label: 'PDF' },
 ]
 

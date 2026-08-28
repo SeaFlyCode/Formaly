@@ -46,8 +46,42 @@ describe('detectFileType', () => {
     },
   )
 
+  it.each(['avif', 'avis'])('detects AVIF for ftyp brand "%s"', async (brand) => {
+    await expect(detectFileType(fileFromBytes(ftypBrandBytes(brand)))).resolves.toBe('avif')
+  })
+
   it('rejects an unknown ftyp brand', async () => {
-    await expect(detectFileType(fileFromBytes(ftypBrandBytes('avif')))).resolves.toBeNull()
+    await expect(detectFileType(fileFromBytes(ftypBrandBytes('xyz1')))).resolves.toBeNull()
+  })
+
+  it('detects BMP from its magic bytes', async () => {
+    await expect(detectFileType(fileFromBytes([0x42, 0x4d, 0, 0, 0, 0]))).resolves.toBe('bmp')
+  })
+
+  it('detects ICO from its magic bytes', async () => {
+    await expect(detectFileType(fileFromBytes([0x00, 0x00, 0x01, 0x00, 0x01, 0x00]))).resolves.toBe('ico')
+  })
+
+  it('detects GIF from its magic bytes', async () => {
+    const bytes = [...'GIF89a'].map((c) => c.charCodeAt(0))
+    await expect(detectFileType(fileFromBytes(bytes))).resolves.toBe('gif')
+  })
+
+  it.each([
+    ['little-endian', [0x49, 0x49, 0x2a, 0x00]],
+    ['big-endian', [0x4d, 0x4d, 0x00, 0x2a]],
+  ])('detects TIFF from its magic bytes (%s)', async (_label, bytes) => {
+    await expect(detectFileType(fileFromBytes(bytes as number[]))).resolves.toBe('tiff')
+  })
+
+  it('detects SVG from an XML declaration', async () => {
+    const bytes = [...'<?xml version="1.0"?>'].map((c) => c.charCodeAt(0))
+    await expect(detectFileType(fileFromBytes(bytes))).resolves.toBe('svg')
+  })
+
+  it('detects SVG without an XML declaration', async () => {
+    const bytes = [...'<svg xmlns'].map((c) => c.charCodeAt(0))
+    await expect(detectFileType(fileFromBytes(bytes))).resolves.toBe('svg')
   })
 
   it('returns null for unrecognized content', async () => {

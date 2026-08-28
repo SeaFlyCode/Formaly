@@ -5,7 +5,7 @@ import { ModeSelector, type EditMode } from './components/ModeSelector'
 import type { ResizeOutputFormat } from './lib/resize-image'
 import { PreviewPanel } from './components/PreviewPanel'
 import { ExportButton } from './components/ExportButton'
-import { detectFileType, type DetectedFileType } from './lib/file-type-detector'
+import { detectFileType, NORMALIZABLE_TYPES, type DetectedFileType } from './lib/file-type-detector'
 import { checkBrowserSupport } from './lib/check-browser-support'
 import type {
   ImageTargetFormat,
@@ -29,6 +29,12 @@ const MIME_BY_DETECTED: Record<DetectedFileType, string> = {
   webp: 'image/webp',
   pdf: 'application/pdf',
   heic: 'image/heic',
+  svg: 'image/svg+xml',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  gif: 'image/gif',
+  tiff: 'image/tiff',
 }
 
 const EXTENSION_BY_FORMAT: Record<TargetFormat, string> = {
@@ -36,10 +42,46 @@ const EXTENSION_BY_FORMAT: Record<TargetFormat, string> = {
   jpeg: 'jpg',
   webp: 'webp',
   pdf: 'pdf',
+  avif: 'avif',
+  bmp: 'bmp',
+  ico: 'ico',
+  tiff: 'tiff',
 }
+
+type ExoticTargetFormat = 'avif' | 'bmp' | 'ico' | 'tiff'
 
 function isImageTargetFormat(format: TargetFormat): format is ImageTargetFormat {
   return format === 'png' || format === 'jpeg' || format === 'webp'
+}
+
+function isExoticTargetFormat(format: TargetFormat): format is ExoticTargetFormat {
+  return format === 'avif' || format === 'bmp' || format === 'ico' || format === 'tiff'
+}
+
+/** Formats sans support d'encodage natif Canvas — normalisés en PNG avant tout traitement. */
+function needsNormalization(type: DetectedFileType): boolean {
+  return type === 'heic' || NORMALIZABLE_TYPES.includes(type)
+}
+
+async function convertToExoticFormat(source: File, format: ExoticTargetFormat): Promise<Blob> {
+  switch (format) {
+    case 'avif': {
+      const { encodeToAvif } = await import('./lib/avif-convert')
+      return encodeToAvif(source)
+    }
+    case 'bmp': {
+      const { encodeToBmp } = await import('./lib/bmp-convert')
+      return encodeToBmp(source)
+    }
+    case 'ico': {
+      const { encodeToIco } = await import('./lib/ico-convert')
+      return encodeToIco(source)
+    }
+    case 'tiff': {
+      const { encodeToTiff } = await import('./lib/tiff-convert')
+      return encodeToTiff(source)
+    }
+  }
 }
 
 function App() {
@@ -58,6 +100,8 @@ function App() {
   const [isPreparingPdfPage, setIsPreparingPdfPage] = useState(false)
   const [heicAsset, setHeicAsset] = useState<{ url: string; file: File } | null>(null)
   const [isPreparingHeic, setIsPreparingHeic] = useState(false)
+  const [normalizedAsset, setNormalizedAsset] = useState<{ url: string; file: File } | null>(null)
+  const [isPreparingNormalized, setIsPreparingNormalized] = useState(false)
   const [showMerge, setShowMerge] = useState(false)
   const [browserSupport] = useState(() => checkBrowserSupport())
 
@@ -94,6 +138,12 @@ function App() {
   }, [heicAsset])
 
   useEffect(() => {
+    return () => {
+      if (normalizedAsset) URL.revokeObjectURL(normalizedAsset.url)
+    }
+  }, [normalizedAsset])
+
+  useEffect(() => {
     if (!file || sourceType !== 'heic') return
 
     let cancelled = false
@@ -114,6 +164,42 @@ function App() {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Conversion HEIC échouée')
       } finally {
         if (!cancelled) setIsPreparingHeic(false)
+      }
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [file, sourceType])
+
+  useEffect(() => {
+    if (!file || !sourceType || !NORMALIZABLE_TYPES.includes(sourceType)) return
+
+    let cancelled = false
+    setIsPreparingNormalized(true)
+    setNormalizedAsset(null)
+
+    normalizeFile(file, sourceType)
+
+    async function normalizeFile(source: File, type: DetectedFileType) {
+      try {
+        const pngBlob =
+          type === 'tiff'
+            ? await source.arrayBuffer().then(async (buffer) => {
+                const { decodeTiffToPngBlob } = await import('./lib/tiff-convert')
+                return decodeTiffToPngBlob(buffer)
+              })
+            : await import('./lib/image-codecs').then(({ decodeImageFileToPngBlob }) =>
+                decodeImageFileToPngBlob(source),
+              )
+        if (cancelled) return
+        const baseName = source.name.replace(/\.[^.]+$/, '')
+        const pngFile = new File([pngBlob], `${baseName}.png`, { type: 'image/png' })
+        setNormalizedAsset({ url: URL.createObjectURL(pngFile), file: pngFile })
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Conversion échouée')
+      } finally {
+        if (!cancelled) setIsPreparingNormalized(false)
       }
     }
 
@@ -160,7 +246,9 @@ function App() {
 
     const detected = await detectFileType(selected)
     if (!detected) {
-      setError('Format non reconnu — seuls PNG, JPEG, WebP, PDF et HEIC sont supportés pour le moment.')
+      setError(
+        'Format non reconnu — seuls PNG, JPEG, WebP, AVIF, BMP, ICO, TIFF, GIF, SVG, PDF et HEIC sont supportés pour le moment.',
+      )
       return
     }
 
@@ -192,6 +280,7 @@ function App() {
     setError(null)
 
     const baseName = file.name.replace(/\.[^.]+$/, '')
+    const normalizedSourceAsset = heicAsset ?? normalizedAsset
 
     if (sourceType === 'pdf') {
       if (!isImageTargetFormat(targetFormat)) return
@@ -217,7 +306,28 @@ function App() {
       }
     }
 
-    if (sourceType === 'heic' && !heicAsset) return
+    if (needsNormalization(sourceType) && !normalizedSourceAsset) return
+
+    const sourceFile = normalizedSourceAsset ? normalizedSourceAsset.file : file
+
+    if (isExoticTargetFormat(targetFormat)) {
+      let cancelled = false
+
+      convertToExoticFormat(sourceFile, targetFormat).then((blob) => {
+        if (cancelled) return
+        setResultBlob(blob)
+        setResultUrl(URL.createObjectURL(blob))
+      }).catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Conversion échouée')
+      }).finally(() => {
+        if (!cancelled) setIsProcessing(false)
+      })
+
+      return () => {
+        cancelled = true
+      }
+    }
 
     const worker = workerRef.current
     if (!worker) return
@@ -234,8 +344,7 @@ function App() {
 
     worker.addEventListener('message', handleMessage)
 
-    const sourceFile = sourceType === 'heic' && heicAsset ? heicAsset.file : file
-    const sourceMimeType = sourceType === 'heic' ? 'image/png' : MIME_BY_DETECTED[sourceType]
+    const sourceMimeType = normalizedSourceAsset ? 'image/png' : MIME_BY_DETECTED[sourceType]
 
     sourceFile.arrayBuffer().then((buffer) => {
       const request: ProcessingRequest =
@@ -252,9 +361,13 @@ function App() {
 
     return () => worker.removeEventListener('message', handleMessage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file, sourceType, targetFormat, editMode, heicAsset])
+  }, [file, sourceType, targetFormat, editMode, heicAsset, normalizedAsset])
 
-  const cropSourceFormat = sourceType === 'pdf' || sourceType === 'heic' ? 'png' : sourceType
+  const cropSourceFormat: 'png' | 'jpeg' | 'webp' | null = !sourceType
+    ? null
+    : sourceType === 'jpeg' || sourceType === 'webp'
+      ? sourceType
+      : 'png'
   const resizeSourceFormat: ResizeOutputFormat = cropSourceFormat === 'jpeg' || cropSourceFormat === 'webp' ? cropSourceFormat : 'png'
   const resultExtension =
     resultBlob?.type === 'application/zip'
@@ -297,7 +410,11 @@ function App() {
     setIsPreparingPdfPage(false)
     setHeicAsset(null)
     setIsPreparingHeic(false)
+    setNormalizedAsset(null)
+    setIsPreparingNormalized(false)
   }
+
+  const normalizedSourceAsset = heicAsset ?? normalizedAsset
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-10 px-6 py-9 sm:px-16 sm:py-10">
@@ -346,13 +463,13 @@ function App() {
               Convertissez vos fichiers sans qu'ils quittent votre appareil.
             </h1>
             <p className="max-w-md text-[17px] text-(--color-ink-soft)">
-              PNG, JPEG, WebP, PDF, HEIC — gratuit, sans compte, sans limite. Tout se passe dans
-              votre navigateur.
+              PNG, JPEG, WebP, AVIF, BMP, ICO, TIFF, GIF, SVG, PDF, HEIC — gratuit, sans compte, sans
+              limite. Tout se passe dans votre navigateur.
             </p>
           </div>
 
           <Dropzone
-            accept="image/png,image/jpeg,image/webp,application/pdf,image/heic,image/heif"
+            accept="image/png,image/jpeg,image/webp,application/pdf,image/heic,image/heif,image/avif,image/bmp,image/x-icon,image/vnd.microsoft.icon,image/gif,image/tiff,image/svg+xml"
             onFileSelected={handleFileSelected}
           />
 
@@ -384,9 +501,14 @@ function App() {
             <p className="text-center text-[13px] text-(--color-ink-faint)">Conversion HEIC…</p>
           )}
 
-          {(sourceType !== 'pdf' || pdfPageCount === 1) && (sourceType !== 'heic' || heicAsset) && (
-            <ModeSelector value={editMode} onChange={handleModeChange} />
+          {sourceType && NORMALIZABLE_TYPES.includes(sourceType) && isPreparingNormalized && (
+            <p className="text-center text-[13px] text-(--color-ink-faint)">Conversion en cours…</p>
           )}
+
+          {(sourceType !== 'pdf' || pdfPageCount === 1) &&
+            (!sourceType || !needsNormalization(sourceType) || normalizedSourceAsset) && (
+              <ModeSelector value={editMode} onChange={handleModeChange} />
+            )}
 
           {sourceType === 'pdf' && pdfPageCount !== null && pdfPageCount > 1 && (
             <div className="flex justify-center gap-2">
@@ -422,15 +544,15 @@ function App() {
           ) : editMode === 'remove-bg' ? (
             <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
               <RemoveBackgroundTool
-                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
-                file={pdfPageAsset ? pdfPageAsset.file : heicAsset ? heicAsset.file : file}
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : normalizedSourceAsset ? normalizedSourceAsset.url : originalUrl}
+                file={pdfPageAsset ? pdfPageAsset.file : normalizedSourceAsset ? normalizedSourceAsset.file : file}
                 onApply={handleToolApplied}
               />
             </Suspense>
           ) : editMode === 'resize' ? (
             <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
               <ResizeTool
-                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : normalizedSourceAsset ? normalizedSourceAsset.url : originalUrl}
                 sourceFormat={resizeSourceFormat}
                 onApply={handleToolApplied}
               />
@@ -438,15 +560,15 @@ function App() {
           ) : editMode === 'ocr' ? (
             <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
               <OcrTool
-                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : normalizedSourceAsset ? normalizedSourceAsset.url : originalUrl}
                 onApply={handleToolApplied}
               />
             </Suspense>
           ) : editMode === 'convert' ? (
             <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch">
               <PreviewPanel
-                originalUrl={heicAsset ? heicAsset.url : originalUrl}
-                originalIsImage={sourceType !== 'pdf' && (sourceType !== 'heic' || !!heicAsset)}
+                originalUrl={normalizedSourceAsset ? normalizedSourceAsset.url : originalUrl}
+                originalIsImage={sourceType !== 'pdf' && (!needsNormalization(sourceType) || !!normalizedSourceAsset)}
                 originalLabel="Original"
                 originalFormatLabel={sourceType.toUpperCase()}
                 originalSize={file.size}
@@ -463,9 +585,9 @@ function App() {
           ) : (
             <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
               <CropTool
-                imageUrl={pdfPageAsset ? pdfPageAsset.url : heicAsset ? heicAsset.url : originalUrl}
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : normalizedSourceAsset ? normalizedSourceAsset.url : originalUrl}
                 mimeType={
-                  sourceType === 'pdf' || sourceType === 'heic' ? 'image/png' : MIME_BY_DETECTED[sourceType]
+                  sourceType === 'pdf' || needsNormalization(sourceType) ? 'image/png' : MIME_BY_DETECTED[sourceType]
                 }
                 onApply={handleToolApplied}
               />

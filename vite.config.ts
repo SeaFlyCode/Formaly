@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  worker: {
+    format: 'es',
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -55,6 +58,10 @@ export default defineConfig({
           '**/transformers.web*',
           '**/PDFButton*',
           '**/processing.worker*',
+          '**/avif_enc*',
+          '**/avif_dec*',
+          '**/avif-convert*',
+          '**/tiff-convert*',
         ],
         // Filet de sécurité : si un gros chunk lazy-loadé échappe aux
         // motifs ci-dessus (renommage, nouvel outil...), le build
@@ -68,7 +75,7 @@ export default defineConfig({
             // transformers.js) : mis en cache après le premier
             // téléchargement, puis servis depuis le cache.
             urlPattern: ({ url }) =>
-              /ort-wasm|pdf\.worker|pdf-to-images|heic-convert|transformers\.web|PDFButton|processing\.worker/.test(
+              /ort-wasm|pdf\.worker|pdf-to-images|heic-convert|transformers\.web|PDFButton|processing\.worker|avif_enc|avif_dec|avif-convert|tiff-convert/.test(
                 url.pathname,
               ) || url.pathname.endsWith('.wasm'),
             handler: 'CacheFirst',

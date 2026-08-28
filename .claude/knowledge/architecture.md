@@ -45,6 +45,17 @@ Site statique (Vite + React 19 + TypeScript + Tailwind v4) qui regroupe des outi
 ### HEIC (`src/lib/heic-convert.ts`)
 - **Rôle** : conversion HEIC → PNG via `heic2any`, en amont du reste du pipeline (le fichier HEIC original n'est jamais traité directement par les autres outils).
 
+### Formats image additionnels (AVIF, BMP, ICO, TIFF, GIF statique, SVG)
+- **Contrainte** : `OffscreenCanvas`/`HTMLCanvasElement` ne savent encoder que PNG/JPEG/WebP (`processing.worker.ts`). Ces formats ne passent donc jamais par le worker.
+- **Normalisation source → PNG** (`src/lib/image-codecs.ts`, fonctions `decodeImageFileToImageData`/`decodeImageFileToPngBlob` via `createImageBitmap` + canvas) : utilisée pour normaliser en amont (comme HEIC) les sources SVG/AVIF/BMP/ICO/GIF (décodage natif navigateur) et, via `src/lib/tiff-convert.ts` (`decodeTiffToPngBlob`, lib `utif`), TIFF (pas de décodage natif). État `normalizedAsset` dans `App.tsx`, généralisation du pattern `heicAsset` existant (`needsNormalization()`, `NORMALIZABLE_TYPES` exporté par `file-type-detector.ts`).
+- **Encodage cible** (choisi dans `ToolSelector`, dispatché dans le `useEffect` de conversion de `App.tsx` via `isExoticTargetFormat()`/`convertToExoticFormat()`, en dehors du worker) :
+  - **AVIF** — `src/lib/avif-convert.ts`, encode via `@jsquash/avif` (wasm, lazy-loadé, gros payload comme le modèle remove-bg)
+  - **BMP** — `src/lib/bmp-convert.ts`, encodeur maison (BMP 24-bit non compressé)
+  - **ICO** — `src/lib/ico-convert.ts`, conteneur ICO maison qui wrappe directement les octets PNG (pas de décodage nécessaire)
+  - **TIFF** — `src/lib/tiff-convert.ts`, encode via `utif` (`UTIF.encodeImage`, non compressé)
+- **Hors périmètre volontaire** : export SVG (vectorisation, jugé trop lourd), GIF animé (lecture/écriture multi-frame — seule la première frame est supportée en lecture, pas d'export GIF).
+- **PWA** : `@jsquash/avif` a nécessité `worker: { format: 'es' }` dans `vite.config.ts` (son worker multi-thread `avif_enc_mt.js` casse le build en format iife par défaut). Les chunks `avif_enc*`/`avif_dec*`/`avif-convert*`/`tiff-convert*` sont exclus du precache PWA (mêmes `globIgnores`/`runtimeCaching` que les autres outils lourds) ; `bmp-convert`/`ico-convert`/`image-codecs` restent précachés (chunks légers, comme les autres outils).
+
 ## Flux principaux
 
 - **Conversion simple** : Dropzone → détection type → ModeSelector (convert) → ToolSelector (format cible) → Worker (image) ou lib dédiée (PDF/HEIC) → PreviewPanel → ExportButton
@@ -55,8 +66,8 @@ Site statique (Vite + React 19 + TypeScript + Tailwind v4) qui regroupe des outi
 ## PWA / hors-ligne
 
 - **Plugin** : `vite-plugin-pwa` (`registerType: 'autoUpdate'`, config dans `vite.config.ts`).
-- **Precache** (install) : shell applicatif uniquement — bundle principal, CSS, chunks lazy déjà légers (CropTool, MergeTool, ResizeTool, SplitTool, OcrTool, RemoveBackgroundTool), icônes/manifest/html. ~349 KiB, 27 entrées.
-- **Runtime cache (CacheFirst, à la demande)** : gros chunks lazy-loadés — `ort-wasm*` (23,5 Mo, modèle remove-bg), `pdf.worker*` (1,26 Mo), `pdf-to-images*`, `heic-convert*` (1,35 Mo), `transformers.web*`, `PDFButton*`, `processing.worker*`. Exclus du precache explicitement (`globIgnores`/`maximumFileSizeToCacheInBytes: 300*1024` en garde-fou) pour ne pas alourdir l'installation.
+- **Precache** (install) : shell applicatif uniquement — bundle principal, CSS, chunks lazy déjà légers (CropTool, MergeTool, ResizeTool, SplitTool, OcrTool, RemoveBackgroundTool, bmp-convert, ico-convert, image-codecs), icônes/manifest/html. ~401 KiB, 33 entrées.
+- **Runtime cache (CacheFirst, à la demande)** : gros chunks lazy-loadés — `ort-wasm*` (23,5 Mo, modèle remove-bg), `pdf.worker*` (1,26 Mo), `pdf-to-images*`, `heic-convert*` (1,35 Mo), `transformers.web*`, `PDFButton*`, `processing.worker*`, `avif_enc*`/`avif_dec*` (wasm `@jsquash/avif`, ~3,5 Mo), `avif-convert*`, `tiff-convert*` (~39 Ko, `utif`). Exclus du precache explicitement (`globIgnores`/`maximumFileSizeToCacheInBytes: 300*1024` en garde-fou) pour ne pas alourdir l'installation.
 - **Icônes** : `public/icon.svg` + `icon-maskable.svg` (sources), PNG générés (`pwa-192x192.png`, `pwa-512x512.png`, `pwa-maskable-512x512.png`, `apple-touch-icon.png`, favicons) — monogramme "F" sur dégradé terracotta cohérent avec le thème.
 
 ## Tests
