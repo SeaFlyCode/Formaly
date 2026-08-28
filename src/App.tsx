@@ -22,6 +22,22 @@ const ResizeTool = lazy(() => import('./components/ResizeTool').then((m) => ({ d
 const SplitTool = lazy(() => import('./components/SplitTool').then((m) => ({ default: m.SplitTool })))
 const MergeTool = lazy(() => import('./components/MergeTool').then((m) => ({ default: m.MergeTool })))
 const OcrTool = lazy(() => import('./components/OcrTool').then((m) => ({ default: m.OcrTool })))
+const RotateTool = lazy(() => import('./components/RotateTool').then((m) => ({ default: m.RotateTool })))
+const ReorderTool = lazy(() =>
+  import('./components/ReorderTool').then((m) => ({ default: m.ReorderTool })),
+)
+const WatermarkTool = lazy(() =>
+  import('./components/WatermarkTool').then((m) => ({ default: m.WatermarkTool })),
+)
+const PdfWatermarkTool = lazy(() =>
+  import('./components/PdfWatermarkTool').then((m) => ({ default: m.PdfWatermarkTool })),
+)
+const CompressTool = lazy(() =>
+  import('./components/CompressTool').then((m) => ({ default: m.CompressTool })),
+)
+const PdfTextTool = lazy(() =>
+  import('./components/PdfTextTool').then((m) => ({ default: m.PdfTextTool })),
+)
 
 const MIME_BY_DETECTED: Record<DetectedFileType, string> = {
   png: 'image/png',
@@ -227,8 +243,11 @@ function App() {
           const pageFile = new File([firstPageBlob], `${baseName}.png`, { type: 'image/png' })
           setPdfPageAsset({ url: URL.createObjectURL(pageFile), file: pageFile })
         }
-      } catch {
-        if (!cancelled) setPdfPageCount(null)
+      } catch (err) {
+        if (!cancelled) {
+          setPdfPageCount(null)
+          setError(err instanceof Error ? err.message : 'Impossible de lire ce PDF.')
+        }
       } finally {
         if (!cancelled) setIsPreparingPdfPage(false)
       }
@@ -369,14 +388,15 @@ function App() {
       ? sourceType
       : 'png'
   const resizeSourceFormat: ResizeOutputFormat = cropSourceFormat === 'jpeg' || cropSourceFormat === 'webp' ? cropSourceFormat : 'png'
+  const PDF_WHOLE_DOC_MODES: EditMode[] = ['split', 'rotate', 'reorder', 'compress', 'watermark-pdf']
   const resultExtension =
     resultBlob?.type === 'application/zip'
       ? 'zip'
-      : editMode === 'remove-bg'
+      : editMode === 'remove-bg' || editMode === 'watermark'
         ? 'png'
-        : editMode === 'split'
+        : PDF_WHOLE_DOC_MODES.includes(editMode)
           ? 'pdf'
-          : editMode === 'ocr'
+          : editMode === 'ocr' || editMode === 'extract-text'
             ? 'txt'
             : editMode === 'resize' && resultBlob
               ? (resultBlob.type.split('/')[1] === 'jpeg' ? 'jpg' : resultBlob.type.split('/')[1])
@@ -387,11 +407,11 @@ function App() {
   const resultFormatLabel =
     resultBlob?.type === 'application/zip'
       ? 'ZIP'
-      : editMode === 'remove-bg'
+      : editMode === 'remove-bg' || editMode === 'watermark'
         ? 'PNG'
-        : editMode === 'split'
+        : PDF_WHOLE_DOC_MODES.includes(editMode)
           ? 'PDF'
-          : editMode === 'ocr'
+          : editMode === 'ocr' || editMode === 'extract-text'
             ? 'TXT'
             : editMode === 'resize' && resultBlob
               ? resultBlob.type.split('/')[1].toUpperCase()
@@ -510,36 +530,69 @@ function App() {
               <ModeSelector value={editMode} onChange={handleModeChange} />
             )}
 
-          {sourceType === 'pdf' && pdfPageCount !== null && pdfPageCount > 1 && (
-            <div className="flex justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleModeChange('convert')}
-                className={`rounded-full px-4 py-2 text-[13px] transition-colors ${
-                  editMode === 'convert'
-                    ? 'bg-(--color-accent) font-medium text-(--color-card)'
-                    : 'border border-(--color-line) text-(--color-ink-soft) hover:border-(--color-accent)/50'
-                }`}
-              >
-                Convertir en images
-              </button>
-              <button
-                type="button"
-                onClick={() => handleModeChange('split')}
-                className={`rounded-full px-4 py-2 text-[13px] transition-colors ${
-                  editMode === 'split'
-                    ? 'bg-(--color-accent) font-medium text-(--color-card)'
-                    : 'border border-(--color-line) text-(--color-ink-soft) hover:border-(--color-accent)/50'
-                }`}
-              >
-                Découper
-              </button>
+          {sourceType === 'pdf' && pdfPageCount !== null && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {(
+                [
+                  { mode: 'convert', label: 'Convertir en images', show: true },
+                  { mode: 'split', label: 'Découper', show: pdfPageCount > 1 },
+                  { mode: 'reorder', label: 'Réorganiser', show: pdfPageCount > 1 },
+                  { mode: 'rotate', label: 'Rotation', show: true },
+                  // Sur un PDF mono-page, le filigrane passe déjà par ModeSelector (mode
+                  // 'watermark', chemin image identique à crop/resize) — éviter le doublon.
+                  { mode: 'watermark-pdf', label: 'Filigrane', show: pdfPageCount > 1 },
+                  { mode: 'compress', label: 'Compresser', show: true },
+                  { mode: 'extract-text', label: 'Texte du PDF', show: true },
+                ] as { mode: EditMode; label: string; show: boolean }[]
+              )
+                .filter((action) => action.show)
+                .map(({ mode, label }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => handleModeChange(mode)}
+                    className={`rounded-full px-4 py-2 text-[13px] transition-colors ${
+                      editMode === mode
+                        ? 'bg-(--color-accent) font-medium text-(--color-card)'
+                        : 'border border-(--color-line) text-(--color-ink-soft) hover:border-(--color-accent)/50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
             </div>
           )}
 
           {editMode === 'split' && sourceType === 'pdf' && pdfPageCount !== null ? (
             <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
               <SplitTool file={file} pageCount={pdfPageCount} onApply={handleToolApplied} />
+            </Suspense>
+          ) : editMode === 'reorder' && sourceType === 'pdf' && pdfPageCount !== null ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <ReorderTool file={file} pageCount={pdfPageCount} onApply={handleToolApplied} />
+            </Suspense>
+          ) : editMode === 'rotate' && sourceType === 'pdf' ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <RotateTool file={file} onApply={handleToolApplied} />
+            </Suspense>
+          ) : editMode === 'watermark-pdf' && sourceType === 'pdf' ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <PdfWatermarkTool file={file} onApply={handleToolApplied} />
+            </Suspense>
+          ) : editMode === 'compress' && sourceType === 'pdf' ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <CompressTool file={file} onApply={handleToolApplied} />
+            </Suspense>
+          ) : editMode === 'extract-text' && sourceType === 'pdf' ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <PdfTextTool file={file} onApply={handleToolApplied} />
+            </Suspense>
+          ) : editMode === 'watermark' ? (
+            <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>
+              <WatermarkTool
+                imageUrl={pdfPageAsset ? pdfPageAsset.url : normalizedSourceAsset ? normalizedSourceAsset.url : originalUrl}
+                onApply={handleToolApplied}
+              />
             </Suspense>
           ) : editMode === 'remove-bg' ? (
             <Suspense fallback={<p className="text-center text-[13px] text-(--color-ink-faint)">Chargement…</p>}>

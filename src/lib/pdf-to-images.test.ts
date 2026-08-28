@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'worker-url' }))
 
+// 1x1 white JPEG, valid enough for pdf-lib's embedJpg.
+const ONE_PIXEL_JPEG_BASE64 =
+  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k='
+const ONE_PIXEL_JPEG = Uint8Array.from(atob(ONE_PIXEL_JPEG_BASE64), (c) => c.charCodeAt(0))
+
 function makePage() {
   return {
     getViewport: vi.fn(() => ({ width: 100, height: 50 })),
@@ -109,6 +114,51 @@ describe('pdf-to-images', () => {
 
     expect(thumbnails).toHaveLength(3)
     thumbnails.forEach((thumb) => expect(thumb).toBeInstanceOf(Blob))
+  })
+
+  it('inspectPdf surfaces a clear error for a password-protected PDF', async () => {
+    class MockPasswordException extends Error {}
+    const getDocument = vi.fn(() => ({
+      promise: Promise.reject(new MockPasswordException('password required')),
+    }))
+    vi.doMock('pdfjs-dist', () => ({
+      GlobalWorkerOptions: {},
+      PasswordException: MockPasswordException,
+      getDocument,
+    }))
+    const { inspectPdf } = await import('./pdf-to-images')
+
+    await expect(inspectPdf(new ArrayBuffer(0))).rejects.toThrow(/protégé par mot de passe/)
+  })
+
+  it('inspectPdf rethrows other getDocument failures unchanged', async () => {
+    class MockPasswordException extends Error {}
+    const getDocument = vi.fn(() => ({ promise: Promise.reject(new Error('corrupt file')) }))
+    vi.doMock('pdfjs-dist', () => ({
+      GlobalWorkerOptions: {},
+      PasswordException: MockPasswordException,
+      getDocument,
+    }))
+    const { inspectPdf } = await import('./pdf-to-images')
+
+    await expect(inspectPdf(new ArrayBuffer(0))).rejects.toThrow('corrupt file')
+  })
+
+  it('compressPdf rasterizes each page into a new PDF', async () => {
+    const pdf = makePdf(2)
+    vi.doMock('pdfjs-dist', () => ({
+      GlobalWorkerOptions: {},
+      getDocument: mockPdfjsGetDocument(pdf),
+    }))
+    mockCanvas({ toBlobResult: new Blob([ONE_PIXEL_JPEG], { type: 'image/jpeg' }) })
+    const { compressPdf } = await import('./pdf-to-images')
+
+    const result = await compressPdf(new ArrayBuffer(0), 0.6)
+
+    expect(result.type).toBe('application/pdf')
+    const { PDFDocument } = await import('pdf-lib')
+    const outDoc = await PDFDocument.load(await result.arrayBuffer())
+    expect(outDoc.getPageCount()).toBe(2)
   })
 
   it('throws when the canvas context is unavailable', async () => {

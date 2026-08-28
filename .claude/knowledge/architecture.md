@@ -37,9 +37,15 @@ Site statique (Vite + React 19 + TypeScript + Tailwind v4) qui regroupe des outi
 - **SplitTool** (`src/components/SplitTool.tsx` + `src/lib/pdf-split.ts`) — découpage PDF page par page, sélection via miniatures (`renderPdfThumbnails` dans `pdf-to-images.ts`)
 - **MergeTool** (`src/components/MergeTool.tsx` + `src/lib/pdf-merge.ts`) — fusion de plusieurs PDF, réordonnable par drag/boutons, accessible via un lien dédié depuis l'écran d'accueil (pas de fichier unique en entrée donc flux séparé du reste)
 - **OcrTool** (`src/components/OcrTool.tsx` + `src/lib/ocr.ts`) — extraction de texte via `tesseract.js` (langue `fra+eng`, worker + traineddata téléchargés à la demande par la lib), résultat affiché dans un textarea + bouton copier, `onApply` reçoit un `Blob` `text/plain` pour réutiliser l'`ExportButton` existant (export en `.txt`)
+- **RotateTool** (`src/components/RotateTool.tsx` + `src/lib/pdf-rotate.ts`) — rotation par pas de 90° de toutes les pages d'un PDF (`page.setRotation`), aperçu de la 1ère page tourné en CSS
+- **ReorderTool** (`src/components/ReorderTool.tsx` + `src/lib/pdf-reorder.ts`) — réorganisation des pages d'un PDF multi-page, miniatures + boutons monter/descendre (même pattern que `MergeTool`), `copyPages` dans le nouvel ordre
+- **PdfWatermarkTool** / **WatermarkTool** (`src/components/PdfWatermarkTool.tsx` + `WatermarkTool.tsx`, lib commune `src/lib/watermark.ts`) — filigrane texte en diagonale. Deux chemins distincts : `watermarkPdf` (pdf-lib `drawText` sur chaque page, PDF multi-page, mode `watermark-pdf`) et `watermarkImage` (canvas `fillText`, PNG, mode `watermark` — utilisé pour toute source image et pour un PDF mono-page comme crop/resize/ocr le font déjà)
+- **CompressTool** (`src/components/CompressTool.tsx` + `compressPdf` dans `pdf-to-images.ts`) — compression PDF par rasterisation JPEG de chaque page à qualité réglable (réutilise `renderPageToBlob`), reconstruction via `pdf-lib` `embedJpg`. Lossy, aplati le texte vectoriel en image (limite assumée et affichée à l'utilisateur).
+- **PdfTextTool** (`src/components/PdfTextTool.tsx` + `src/lib/pdf-extract-text.ts`) — extraction du texte natif d'un PDF (toutes pages, `pdfjs-dist` `getTextContent`), plus rapide et complet que l'OCR pour un PDF non scanné ; même UI que `OcrTool` mais sans passer par `tesseract.js`
 
 ### Conversion PDF (`src/lib/pdf-to-images.ts`)
-- **Rôle** : PDF → images (une ou plusieurs pages, zip via `fflate` si multi-page), inspection (page count + aperçu 1ère page), génération de miniatures. Basé sur `pdfjs-dist`.
+- **Rôle** : PDF → images (une ou plusieurs pages, zip via `fflate` si multi-page), inspection (page count + aperçu 1ère page), génération de miniatures, compression (`compressPdf`). Basé sur `pdfjs-dist` (+ `pdf-lib` pour `compressPdf`).
+- **PDF chiffré** : `inspectPdf()` catche `pdfjsLib.PasswordException` et relance une erreur avec un message clair ("protégé par mot de passe — non pris en charge") au lieu de laisser l'erreur silencieuse ; `App.tsx` l'affiche via `setError`. Point d'entrée unique de tout PDF déposé, donc aucun autre outil PDF n'a besoin de dupliquer cette vérification. Protection/déverrouillage par mot de passe volontairement hors périmètre (`pdf-lib` ne supporte pas le chiffrement PDF).
 - **Chemin** : `src/lib/pdf-to-images.ts`
 
 ### HEIC (`src/lib/heic-convert.ts`)

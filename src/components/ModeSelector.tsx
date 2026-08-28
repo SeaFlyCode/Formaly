@@ -1,4 +1,16 @@
-export type EditMode = 'convert' | 'crop' | 'remove-bg' | 'resize' | 'split' | 'ocr'
+export type EditMode =
+  | 'convert'
+  | 'crop'
+  | 'remove-bg'
+  | 'resize'
+  | 'split'
+  | 'ocr'
+  | 'rotate'
+  | 'reorder'
+  | 'watermark'
+  | 'watermark-pdf'
+  | 'compress'
+  | 'extract-text'
 
 interface ModeSelectorProps {
   value: EditMode
@@ -10,6 +22,7 @@ const MODES: { mode: EditMode; label: string }[] = [
   { mode: 'crop', label: 'Rogner' },
   { mode: 'remove-bg', label: 'Supprimer le fond' },
   { mode: 'resize', label: 'Compresser / Redimensionner' },
+  { mode: 'watermark', label: 'Filigrane' },
   { mode: 'ocr', label: 'Extraire le texte' },
 ]
 
